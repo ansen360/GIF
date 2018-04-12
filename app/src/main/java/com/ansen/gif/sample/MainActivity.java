@@ -1,22 +1,126 @@
-- **实现原理:**
+package com.ansen.gif.sample;
 
-**1.读取视频文件,将视频文件解析为Bitmap序列**
+import android.Manifest;
+import android.annotation.SuppressLint;
+import android.content.ContentUris;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Environment;
+import android.provider.DocumentsContract;
+import android.provider.MediaStore;
+import android.support.v7.app.AppCompatActivity;
+import android.os.Bundle;
+import android.text.TextUtils;
+import android.view.View;
+import android.widget.Toast;
 
-**2.将Bitmap 序列编码生成 GIF 文件**
+import com.ansen.gif.BitmapRetriever;
+import com.ansen.gif.GIFEncoder;
+import com.ansen.gif.R;
 
-- [**代码下载**](https://github.com/ansen360/GIF)
+import java.io.File;
+import java.io.FileOutputStream;
+import java.util.List;
 
-- **代码流程**
+/**
+ * Created by Ansen on 2017/5/12 18:53.
+ *
+ * @E-mail: ansen360@126.com
+ * @Blog: "http://blog.csdn.net/qq_25804863"
+ * @Github: "https://github.com/ansen360"
+ * @PROJECT_NAME: GIF
+ * @PACKAGE_NAME: com.ansen.gif
+ * @Description: TODO
+ */
+public class MainActivity extends AppCompatActivity {
 
-打开Android系统文件管理:
-```
-    Intent intent = new Intent();
-    intent.setType("video/*");
-    intent.setAction(Intent.ACTION_GET_CONTENT);
-    startActivityForResult(Intent.createChooser(intent, "Select Video"), REQUEST_CODE);
-```
-Activity回调中获取选择的文件URI
-```
+    private static final int REQUEST_CODE = 1;
+    private static final Boolean DEBUG = true;
+    private String mFilePath;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        // 申请权限
+        if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, 0);
+        }
+    }
+
+
+    public void selectFile(View view) {
+        Intent intent = new Intent();
+        intent.setType("video/*");
+        intent.setAction(Intent.ACTION_GET_CONTENT);
+        startActivityForResult(Intent.createChooser(intent, "Select Video"), REQUEST_CODE);
+    }
+
+    public void generateGIF(final View view) {
+        if (TextUtils.isEmpty(mFilePath)) {
+            Toast.makeText(this, "请选择视频文件", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        new Thread() {
+            @Override
+            public void run() {
+                super.run();
+                BitmapRetriever extractor = new BitmapRetriever();
+                extractor.setFPS(8);
+                extractor.setScope(0, 5);
+                extractor.setSize(720, 1280);
+                List<Bitmap> bitmaps = extractor.generateBitmaps(mFilePath);
+
+                String filePath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/"
+                        + String.valueOf(System.currentTimeMillis()) + ".gif";
+                GIFEncoder encoder = new GIFEncoder();
+                encoder.init(bitmaps.get(0));
+                encoder.start(filePath);
+                for (int i = 1; i < bitmaps.size(); i++) {
+                    encoder.addFrame(bitmaps.get(i));
+                    debugSaveBitmap(bitmaps.get(i), i + "");
+                }
+                encoder.finish();
+                sendBroadcast(new Intent("android.intent.action.MEDIA_SCANNER_SCAN_FILE", Uri.fromFile(new File(filePath))));
+                view.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        Toast.makeText(MainActivity.this, "GIF完成", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+        }.start();
+    }
+
+    public void debugSaveBitmap(Bitmap bm, String picName) {
+        if (DEBUG) {
+            String path = Environment.getExternalStorageDirectory().getAbsolutePath() + "/Pictures/Screenshots/";
+            File file = new File(path);
+            if (!file.exists()) {
+                file.mkdirs();
+            }
+            File f = new File(file.getAbsolutePath(), "DEBUG__" + picName + ".png");
+            if (f.exists()) {
+                f.delete();
+            }
+            try {
+                FileOutputStream out = new FileOutputStream(f);
+                bm.compress(Bitmap.CompressFormat.PNG, 90, out);
+                out.flush();
+                out.close();
+                sendBroadcast(new Intent("android.intent.action.MEDIA_SCANNER_SCAN_FILE", Uri.fromFile(f)));
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode == REQUEST_CODE) {
@@ -26,9 +130,9 @@ Activity回调中获取选择的文件URI
             }
         }
     }
-```
-通过Uri获取文件的真实路径
-```
+
+    // -------------------------  通过Uri获取文件的真实路径  -------------------------
+
     /**
      * Android4.4+,通过Uri获取文件绝对路径
      */
@@ -142,24 +246,6 @@ Activity回调中获取选择的文件URI
     public boolean isMediaDocument(Uri uri) {
         return "com.android.providers.media.documents".equals(uri.getAuthority());
     }
-```
-将视频文件解析为Bitmap序列(也就是Bitmap的集合),原理是通过MediaMetadataRetriever提供的方法,不断的在给定的时间位置上获取一帧图片,然后保存到集合中.(该方法常用来获取视频文件的缩略图)
-```
-    BitmapRetriever extractor = new BitmapRetriever();
-    extractor.setFPS(4);
-    extractor.setScope(0, 5);
-    extractor.setSize(540, 960);
-    List<Bitmap> bitmaps = extractor.generateBitmaps(mFilePath);
-```
-将Bitmap序列中数据按照 GIF 的文件格式编码生成GIF图片
-```
-    String filePath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/"
-            + String.valueOf(System.currentTimeMillis()) + ".gif";
-    GIFEncoder encoder = new GIFEncoder();
-    encoder.init(bitmaps.get(0));
-    encoder.start(filePath);
-    for (int i = 1; i < bitmaps.size(); i++) {
-        encoder.addFrame(bitmaps.get(i));
-    }
-    encoder.finish();
-```
+
+
+}
