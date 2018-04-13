@@ -2,7 +2,10 @@ package com.ansen.gif;
 
 import android.graphics.Bitmap;
 import android.media.MediaMetadataRetriever;
+import android.os.Environment;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -18,25 +21,39 @@ import java.util.List;
  */
 public class BitmapRetriever {
 
-    private static final int US_OF_S = 1000 * 1000;
+    private static final int μs = 1000 * 1000;  // 1 μs
+    private static final Boolean DEBUG = false;
 
     private List<Bitmap> bitmaps = new ArrayList<>();
     private int width = 0;
     private int height = 0;
-    private int begin = 0;
+    private int start = 0;
     private int end = 0;
-    private int fps = 5;
+    private int fps = 5;    // 帧数
 
 
     public List<Bitmap> generateBitmaps(String path) {
         MediaMetadataRetriever mmr = new MediaMetadataRetriever();
         mmr.setDataSource(path);
-        double inc = US_OF_S / fps;
-        for (double i = begin * US_OF_S; i < end * US_OF_S; i += inc) {
-            // 在给定的时间位置上获取一帧图片
+        double interval = μs / fps;
+        long duration = (Long.decode(mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)) * 1000);
+        if (end > 0) {
+            duration = end * μs;
+        }
+        for (long i = start * μs; i < duration; i += interval) {
+            /** 在给定的时间位置上获取一帧图片
+             * (视频质量不高或其他原因 可能出现总是获取为同一帧画面,
+             * 也就是 假设获取50帧画面,实际只有10帧有效,其余有重复画面)
+             */
             Bitmap frame = mmr.getFrameAtTime((long) i, MediaMetadataRetriever.OPTION_CLOSEST);
             if (frame != null) {
-                bitmaps.add(scale(frame));
+                try {
+                    bitmaps.add(scale(frame));
+                    debugSaveBitmap(frame, "" + i);
+                } catch (OutOfMemoryError oom) {
+                    oom.printStackTrace();
+                    break;
+                }
             }
         }
         return bitmaps;
@@ -48,8 +65,9 @@ public class BitmapRetriever {
         this.height = height;
     }
 
-    public void setScope(int begin, int end) {
-        this.begin = begin;
+    // 截取视频的起始时间(单位 s)
+    public void setDuration(int begin, int end) {
+        this.start = begin;
         this.end = end;
     }
 
@@ -63,5 +81,28 @@ public class BitmapRetriever {
                 width > 0 ? width : bitmap.getWidth(),
                 height > 0 ? height : bitmap.getHeight(),
                 true);
+    }
+
+    public void debugSaveBitmap(Bitmap bm, String picName) {
+        if (DEBUG) {
+            String path = Environment.getExternalStorageDirectory().getAbsolutePath() + "/Pictures/Screenshots/";
+            File file = new File(path);
+            if (!file.exists()) {
+                file.mkdirs();
+            }
+            File f = new File(file.getAbsolutePath(), "DEBUG__" + picName + ".png");
+            if (f.exists()) {
+                f.delete();
+            }
+            try {
+                FileOutputStream out = new FileOutputStream(f);
+                bm.compress(Bitmap.CompressFormat.PNG, 90, out);
+                out.flush();
+                out.close();
+//                sendBroadcast(new Intent("android.intent.action.MEDIA_SCANNER_SCAN_FILE", Uri.fromFile(f)));
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
     }
 }

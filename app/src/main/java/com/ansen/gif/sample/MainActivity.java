@@ -1,7 +1,6 @@
 package com.ansen.gif.sample;
 
 import android.Manifest;
-import android.annotation.SuppressLint;
 import android.content.ContentUris;
 import android.content.Context;
 import android.content.Intent;
@@ -17,6 +16,7 @@ import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.View;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.ansen.gif.BitmapRetriever;
@@ -24,7 +24,6 @@ import com.ansen.gif.GIFEncoder;
 import com.ansen.gif.R;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.util.List;
 
 /**
@@ -40,14 +39,14 @@ import java.util.List;
 public class MainActivity extends AppCompatActivity {
 
     private static final int REQUEST_CODE = 1;
-    private static final Boolean DEBUG = true;
     private String mFilePath;
+    private TextView status;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
+        status = (TextView) findViewById(R.id.status);
         // 申请权限
         if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, 0);
@@ -67,13 +66,15 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "请选择视频文件", Toast.LENGTH_SHORT).show();
             return;
         }
+        status.setText("GIF制作中...");
         new Thread() {
             @Override
             public void run() {
                 super.run();
                 BitmapRetriever extractor = new BitmapRetriever();
-                extractor.setFPS(8);
-                extractor.setScope(0, 5);
+                extractor.setFPS(10);
+                // 截取视频的起始时间
+                extractor.setDuration(0, 5);
                 extractor.setSize(720, 1280);
                 List<Bitmap> bitmaps = extractor.generateBitmaps(mFilePath);
 
@@ -84,41 +85,17 @@ public class MainActivity extends AppCompatActivity {
                 encoder.start(filePath);
                 for (int i = 1; i < bitmaps.size(); i++) {
                     encoder.addFrame(bitmaps.get(i));
-                    debugSaveBitmap(bitmaps.get(i), i + "");
                 }
                 encoder.finish();
                 sendBroadcast(new Intent("android.intent.action.MEDIA_SCANNER_SCAN_FILE", Uri.fromFile(new File(filePath))));
                 view.post(new Runnable() {
                     @Override
                     public void run() {
-                        Toast.makeText(MainActivity.this, "GIF完成", Toast.LENGTH_SHORT).show();
+                        status.setText("GIF完成.");
                     }
                 });
             }
         }.start();
-    }
-
-    public void debugSaveBitmap(Bitmap bm, String picName) {
-        if (DEBUG) {
-            String path = Environment.getExternalStorageDirectory().getAbsolutePath() + "/Pictures/Screenshots/";
-            File file = new File(path);
-            if (!file.exists()) {
-                file.mkdirs();
-            }
-            File f = new File(file.getAbsolutePath(), "DEBUG__" + picName + ".png");
-            if (f.exists()) {
-                f.delete();
-            }
-            try {
-                FileOutputStream out = new FileOutputStream(f);
-                bm.compress(Bitmap.CompressFormat.PNG, 90, out);
-                out.flush();
-                out.close();
-                sendBroadcast(new Intent("android.intent.action.MEDIA_SCANNER_SCAN_FILE", Uri.fromFile(f)));
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
     }
 
     @Override
