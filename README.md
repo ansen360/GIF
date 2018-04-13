@@ -146,11 +146,41 @@ Activity回调中获取选择的文件URI
 将视频文件解析为Bitmap序列(也就是Bitmap的集合),原理是通过MediaMetadataRetriever提供的方法,不断的在给定的时间位置上获取一帧图片,然后保存到集合中.(该方法常用来获取视频文件的缩略图)
 ```
     BitmapRetriever extractor = new BitmapRetriever();
-    extractor.setFPS(4);
-    extractor.setScope(0, 5);
-    extractor.setSize(540, 960);
+    extractor.setFPS(10);
+    // 截取视频的起始时间
+    extractor.setDuration(0, 5);
+    extractor.setSize(720, 1280);
     List<Bitmap> bitmaps = extractor.generateBitmaps(mFilePath);
 ```
+通过MediaMetadataRetriever解析单位时间上的一帧画面
+```
+    // com.ansen.gif.BitmapRetriever
+    public List<Bitmap> generateBitmaps(String path) {
+        MediaMetadataRetriever mmr = new MediaMetadataRetriever();
+        mmr.setDataSource(path);
+        double interval = μs / fps;
+        long duration = (Long.decode(mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)) * 1000);
+        if (end > 0) {
+            duration = end * μs;
+        }
+        for (long i = start * μs; i < duration; i += interval) {
+            /** 在给定的时间位置上获取一帧图片
+             * (视频质量不高或其他原因 可能出现总是获取为同一帧画面,
+             * 也就是 假设获取50帧画面,实际只有10帧有效,其余有重复画面)
+             */
+            Bitmap frame = mmr.getFrameAtTime((long) i, MediaMetadataRetriever.OPTION_CLOSEST);
+            if (frame != null) {
+                try {
+                    bitmaps.add(scale(frame));
+                    debugSaveBitmap(frame, "" + i);
+                } catch (OutOfMemoryError oom) {
+                    oom.printStackTrace();
+                    break;
+                }
+            }
+        }
+```
+
 将Bitmap序列中数据按照 GIF 的文件格式编码生成GIF图片
 ```
     String filePath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/"
@@ -163,3 +193,6 @@ Activity回调中获取选择的文件URI
     }
     encoder.finish();
 ```
+
+
+**仿Iphone拍摄动态GIF图的实现思路同此,1秒内连拍多张图片(Bitmap),将图片的集合按如上方式制作GIF图片**
